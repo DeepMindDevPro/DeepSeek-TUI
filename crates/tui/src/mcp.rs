@@ -4519,6 +4519,12 @@ mod tests {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         use tokio::net::TcpListener;
 
+        async fn write_response(socket: &mut tokio::net::TcpStream, response: &[u8]) {
+            socket.write_all(response).await.unwrap();
+            socket.flush().await.unwrap();
+            socket.shutdown().await.unwrap();
+        }
+
         let _lock = lock_mcp_loopback_tests().await;
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -4580,7 +4586,7 @@ mod tests {
                         let response = format!(
                             "HTTP/1.1 200 OK\r\nMcp-Session-Id: {session}\r\nContent-Length: 0\r\n\r\n"
                         );
-                        socket.write_all(response.as_bytes()).await.unwrap();
+                        write_response(&mut socket, response.as_bytes()).await;
                         return;
                     }
 
@@ -4596,12 +4602,11 @@ mod tests {
 
                     if method == "tools/call" && session_header.as_deref() == Some("sess-old") {
                         stale_seen.store(true, AtomicOrdering::SeqCst);
-                        socket
-                            .write_all(
-                                b"HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\nContent-Length: 27\r\n\r\n{\"error\":\"session expired\"}",
-                            )
-                            .await
-                            .unwrap();
+                        write_response(
+                            &mut socket,
+                            b"HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\nContent-Length: 27\r\n\r\n{\"error\":\"session expired\"}",
+                        )
+                        .await;
                         return;
                     }
 
@@ -4626,10 +4631,11 @@ mod tests {
                             serde_json::json!({ "content": [{ "type": "text", "text": "ok" }] })
                         }
                         _ => {
-                            socket
-                                .write_all(b"HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\n\r\n")
-                                .await
-                                .unwrap();
+                            write_response(
+                                &mut socket,
+                                b"HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\n\r\n",
+                            )
+                            .await;
                             return;
                         }
                     };
@@ -4644,7 +4650,7 @@ mod tests {
                         response_body.len(),
                         response_body
                     );
-                    socket.write_all(response.as_bytes()).await.unwrap();
+                    write_response(&mut socket, response.as_bytes()).await;
                 });
             }
         });
