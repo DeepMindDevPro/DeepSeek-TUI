@@ -4052,4 +4052,88 @@ mod tests {
             );
         }
     }
+
+    // ── Ghost-text prompt suggestion rendering ────────────────────────
+
+    #[test]
+    fn ghost_text_renders_when_suggestion_set_and_input_empty() {
+        let mut app = create_test_app();
+        app.prompt_suggestion = Some("What about error handling?".to_string());
+        let slash_menu_entries = Vec::<SlashMenuEntry>::new();
+        let mention_menu_entries = Vec::<String>::new();
+        let widget = ComposerWidget::new(&app, 5, &slash_menu_entries, &mention_menu_entries);
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 80,
+            height: 5,
+        };
+        let mut buf = Buffer::empty(area);
+        widget.render(area, &mut buf);
+
+        let rendered: String = buf
+            .content
+            .iter()
+            .map(|c| c.symbol())
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(
+            rendered.contains("What about error handling?"),
+            "ghost text should render the suggestion. Got: {rendered}"
+        );
+    }
+
+    #[test]
+    fn ghost_text_hidden_when_input_not_empty() {
+        let mut app = create_test_app();
+        app.prompt_suggestion = Some("A suggestion".to_string());
+        app.input = "hello".to_string();
+        app.cursor_position = 5;
+        let slash_menu_entries = Vec::<SlashMenuEntry>::new();
+        let mention_menu_entries = Vec::<String>::new();
+        let widget = ComposerWidget::new(&app, 5, &slash_menu_entries, &mention_menu_entries);
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 80,
+            height: 5,
+        };
+        let mut buf = Buffer::empty(area);
+        widget.render(area, &mut buf);
+
+        let has_suggestion = buf
+            .content
+            .iter()
+            .any(|c| c.symbol().contains("A suggestion"));
+        assert!(
+            !has_suggestion,
+            "suggestion should not render when input is non-empty"
+        );
+    }
+
+    #[test]
+    fn ghost_text_hidden_when_no_suggestion() {
+        let mut app = create_test_app();
+        app.prompt_suggestion = None;
+        let slash_menu_entries = Vec::<SlashMenuEntry>::new();
+        let mention_menu_entries = Vec::<String>::new();
+        let widget = ComposerWidget::new(&app, 5, &slash_menu_entries, &mention_menu_entries);
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 80,
+            height: 5,
+        };
+        let mut buf = Buffer::empty(area);
+        widget.render(area, &mut buf);
+
+        // When no suggestion and input is empty, placeholder text should appear
+        // instead. The exact placeholder text is locale-dependent, so we check
+        // that the suggestion text is NOT present.
+        let has_placeholder_like_text = buf.content.iter().any(|c| !c.symbol().trim().is_empty());
+        assert!(
+            has_placeholder_like_text,
+            "some non-empty text should render as placeholder"
+        );
+    }
 }

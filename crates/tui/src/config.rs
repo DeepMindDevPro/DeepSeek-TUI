@@ -5416,6 +5416,28 @@ mod tests {
     }
 
     #[test]
+    fn prompt_suggestion_defaults_to_false() {
+        let config = Config::default();
+        assert_eq!(
+            config.prompt_suggestion, None,
+            "default Config must not opt in"
+        );
+        assert!(
+            !config.prompt_suggestion_enabled(),
+            "prompt_suggestion must be opt-in (default off)"
+        );
+    }
+
+    #[test]
+    fn prompt_suggestion_enabled_when_set_true() {
+        let config = Config {
+            prompt_suggestion: Some(true),
+            ..Default::default()
+        };
+        assert!(config.prompt_suggestion_enabled());
+    }
+
+    #[test]
     fn warns_when_allow_shell_nested_under_general_section() {
         // #2589: the reporter's config nested top-level keys under sections that
         // do not exist, so they were silently dropped and shell tools vanished.
