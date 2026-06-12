@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -219,10 +219,15 @@ fn default_enabled() -> bool {
 impl HooksConfig {
     /// Load global hooks merged with project-local `.codewhale/hooks.toml` (#3026).
     ///
-    /// Project hooks are appended after global hooks.  A malformed project file
-    /// logs a warning and falls back to global-only.
-    pub fn load_with_project(global: HooksConfig, workspace: &std::path::Path) -> HooksConfig {
+    /// Project hooks are executable repository configuration, so they are only
+    /// honored after the workspace has been trusted in user-owned config.
+    /// Trusted project hooks are appended after global hooks.  A malformed
+    /// trusted project file logs a warning and falls back to global-only.
+    pub fn load_with_project(global: HooksConfig, workspace: &Path) -> HooksConfig {
         let project_path = workspace.join(".codewhale").join("hooks.toml");
+        if !project_path.exists() || !workspace_allows_project_hooks(workspace) {
+            return global;
+        }
         let Ok(contents) = std::fs::read_to_string(&project_path) else {
             return global;
         };
@@ -254,6 +259,10 @@ impl HooksConfig {
     pub fn has_hooks(&self) -> bool {
         self.enabled && !self.hooks.is_empty()
     }
+}
+
+fn workspace_allows_project_hooks(workspace: &Path) -> bool {
+    crate::config::is_workspace_trusted(workspace)
 }
 
 /// Context passed to hooks via environment variables
@@ -1424,8 +1433,15 @@ fn parse_env_lines(stdout: &str) -> HashMap<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{EnvVarGuard, lock_test_env};
     use std::collections::HashMap;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
+
+    fn trust_workspace_for_project_hooks(workspace: &Path, config_path: &Path) -> EnvVarGuard {
+        let guard = EnvVarGuard::set("CODEWHALE_CONFIG_PATH", config_path);
+        crate::config::save_workspace_trust(workspace).expect("save workspace trust");
+        guard
+    }
 
     /// #456 — `parse_env_lines` covers the formats users actually emit from
     /// shell hooks: bare `KEY=VAL`, `export KEY=VAL`, quoted values, comments,
@@ -2438,7 +2454,11 @@ exit 7
 
     #[test]
     fn load_with_project_appends_project_hooks_after_global() {
+        let _lock = lock_test_env();
         let dir = tempfile::tempdir().expect("tempdir");
+        let config_path = dir.path().join("user-config.toml");
+        let _config = trust_workspace_for_project_hooks(dir.path(), &config_path);
+        let _legacy_config = EnvVarGuard::remove("DEEPSEEK_CONFIG_PATH");
         let project_dir = dir.path().join(".codewhale");
         std::fs::create_dir_all(&project_dir).expect("mkdir .codewhale");
         std::fs::write(
@@ -2470,8 +2490,73 @@ command = "echo project"
     }
 
     #[test]
-    fn load_with_project_malformed_file_falls_back_to_global() {
+    fn load_with_project_ignores_project_hooks_until_workspace_trusted() {
+        let _lock = lock_test_env();
         let dir = tempfile::tempdir().expect("tempdir");
+        let _config = EnvVarGuard::set("CODEWHALE_CONFIG_PATH", dir.path().join("config.toml"));
+        let _legacy_config = EnvVarGuard::remove("DEEPSEEK_CONFIG_PATH");
+        let project_dir = dir.path().join(".codewhale");
+        std::fs::create_dir_all(&project_dir).expect("mkdir .codewhale");
+        std::fs::write(
+            project_dir.join("hooks.toml"),
+            r#"
+[[hooks]]
+event = "tool_call_before"
+command = "echo project"
+"#,
+        )
+        .expect("write hooks.toml");
+
+        let global = HooksConfig {
+            enabled: true,
+            hooks: vec![Hook::new(HookEvent::ToolCallBefore, "echo global")],
+            ..HooksConfig::default()
+        };
+
+        let merged = HooksConfig::load_with_project(global, dir.path());
+        assert_eq!(merged.hooks.len(), 1);
+        assert_eq!(merged.hooks[0].command, "echo global");
+    }
+
+    #[test]
+    fn load_with_project_ignores_project_local_legacy_trust_marker() {
+        let _lock = lock_test_env();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _config = EnvVarGuard::set("CODEWHALE_CONFIG_PATH", dir.path().join("config.toml"));
+        let _legacy_config = EnvVarGuard::remove("DEEPSEEK_CONFIG_PATH");
+        let project_dir = dir.path().join(".codewhale");
+        let legacy_trust_dir = dir.path().join(".deepseek");
+        std::fs::create_dir_all(&project_dir).expect("mkdir .codewhale");
+        std::fs::create_dir_all(&legacy_trust_dir).expect("mkdir .deepseek");
+        std::fs::write(legacy_trust_dir.join("trusted"), "").expect("write legacy trust marker");
+        std::fs::write(
+            project_dir.join("hooks.toml"),
+            r#"
+[[hooks]]
+event = "tool_call_before"
+command = "echo project"
+"#,
+        )
+        .expect("write hooks.toml");
+
+        let global = HooksConfig {
+            enabled: true,
+            hooks: vec![Hook::new(HookEvent::ToolCallBefore, "echo global")],
+            ..HooksConfig::default()
+        };
+
+        let merged = HooksConfig::load_with_project(global, dir.path());
+        assert_eq!(merged.hooks.len(), 1);
+        assert_eq!(merged.hooks[0].command, "echo global");
+    }
+
+    #[test]
+    fn load_with_project_malformed_file_falls_back_to_global() {
+        let _lock = lock_test_env();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_path = dir.path().join("user-config.toml");
+        let _config = trust_workspace_for_project_hooks(dir.path(), &config_path);
+        let _legacy_config = EnvVarGuard::remove("DEEPSEEK_CONFIG_PATH");
         let project_dir = dir.path().join(".codewhale");
         std::fs::create_dir_all(&project_dir).expect("mkdir .codewhale");
         std::fs::write(project_dir.join("hooks.toml"), "this is [ not toml")

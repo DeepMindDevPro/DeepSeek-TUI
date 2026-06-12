@@ -3202,6 +3202,15 @@ async fn run_event_loop(
                         match onboarding::mark_trusted(&app.workspace) {
                             Ok(_) => {
                                 app.trust_mode = true;
+                                app.hooks = HookExecutor::new(
+                                    crate::hooks::HooksConfig::load_with_project(
+                                        config.hooks_config(),
+                                        &app.workspace,
+                                    ),
+                                    app.workspace.clone(),
+                                );
+                                app.runtime_services.hook_executor =
+                                    Some(std::sync::Arc::new(app.hooks.clone()));
                                 app.status_message = None;
                                 if app.onboarding_workspace_trust_gate {
                                     app.onboarding_workspace_trust_gate = false;

@@ -57,6 +57,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   persisted turn items once and groups them by turn instead of reading the
   items directory once per turn, preserving item order while keeping large
   thread detail loads responsive.
+- **Project-local hook trust boundary (#3140).** `.codewhale/hooks.toml` is now
+  loaded only after the workspace is trusted in user-owned config, matching the
+  project-local MCP trust model while preserving the documented shell-command
+  hook contract.
 - **SiliconFlow China provider config (#2893/#2895).** `siliconflow-CN`
   now reads its own `[providers.siliconflow_cn]` / `[providers.siliconflow-CN]`
   table and falls back to `[providers.siliconflow]` only for unset

@@ -691,10 +691,16 @@ metacharacters in the pattern are matched literally.
 
 Repositories can ship policy in `<workspace>/.codewhale/hooks.toml`,
 using the same shape as the `[hooks]` table (top-level fields plus
-`[[hooks]]` entries). Project hooks are appended after global hooks
-from `config.toml`, so they run last and, for `updatedInput`, win
-ties. A malformed project file logs a warning and startup falls back
-to global hooks only.
+`[[hooks]]` entries). Project hooks are executable shell
+configuration, so CodeWhale only loads them after the workspace has
+been trusted in user-owned config through the trust prompt or a
+`[projects."<workspace>"] trust_level = "trusted"` entry. Session
+`/trust on` mode does not enable repo-supplied hooks by itself, and
+repo-local legacy markers such as `.deepseek/trusted` do not enable
+project hooks. Once trusted, project hooks are appended after global
+hooks from `config.toml`, so they run last and, for `updatedInput`,
+win ties. A malformed trusted project file logs a warning and startup
+falls back to global hooks only.
 
 ```toml
 # .codewhale/hooks.toml
