@@ -307,14 +307,6 @@ Plain `codewhale exec` is a one-shot model response. Use `--auto` for
 non-interactive filesystem/shell tool use.
 ")]
 struct ExecArgs {
-    /// Prompt to send to the model
-    #[arg(
-        value_name = "PROMPT",
-        required = true,
-        trailing_var_arg = true,
-        allow_hyphen_values = true
-    )]
-    prompt: Vec<String>,
     /// Override model for this run
     #[arg(long)]
     model: Option<String>,
@@ -349,6 +341,14 @@ struct ExecArgs {
     /// Extra text appended to the system prompt for this run.
     #[arg(long)]
     append_system_prompt: Option<String>,
+    /// Prompt to send to the model
+    #[arg(
+        value_name = "PROMPT",
+        required = true,
+        trailing_var_arg = true,
+        allow_hyphen_values = true
+    )]
+    prompt: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -464,7 +464,19 @@ fn resolve_exec_model(config: &Config, explicit_model: Option<&str>) -> String {
         .map(str::trim)
         .filter(|model| !model.is_empty())
         .map(ToOwned::to_owned)
+        .or_else(exec_model_env_override)
         .unwrap_or_else(|| config.default_model())
+}
+
+fn exec_model_env_override() -> Option<String> {
+    ["CODEWHALE_MODEL", "DEEPSEEK_MODEL"]
+        .into_iter()
+        .find_map(|key| {
+            std::env::var(key)
+                .ok()
+                .map(|model| model.trim().to_string())
+                .filter(|model| !model.is_empty())
+        })
 }
 
 fn top_level_prompt_initial_input(parts: &[String]) -> Option<tui::InitialInput> {
@@ -6647,6 +6659,9 @@ mod terminal_mode_tests {
 
     #[test]
     fn exec_model_resolution_uses_provider_scoped_default() {
+        let _env_lock = crate::test_support::lock_test_env();
+        let _codewhale_model = crate::test_support::EnvVarGuard::remove("CODEWHALE_MODEL");
+        let _deepseek_model = crate::test_support::EnvVarGuard::remove("DEEPSEEK_MODEL");
         let config = Config {
             provider: Some("openrouter".to_string()),
             default_text_model: Some("deepseek/deepseek-v4-pro".to_string()),
@@ -6671,12 +6686,50 @@ mod terminal_mode_tests {
     }
 
     #[test]
+    fn exec_model_resolution_prefers_codewhale_model_env_override() {
+        let _env_lock = crate::test_support::lock_test_env();
+        let _codewhale_model = crate::test_support::EnvVarGuard::set("CODEWHALE_MODEL", " auto ");
+        let _deepseek_model =
+            crate::test_support::EnvVarGuard::set("DEEPSEEK_MODEL", "stale-deepseek-model");
+        let config = Config {
+            default_text_model: Some("deepseek/deepseek-v4-pro".to_string()),
+            ..Default::default()
+        };
+
+        assert_eq!(resolve_exec_model(&config, None), "auto");
+    }
+
+    #[test]
+    fn exec_model_resolution_uses_legacy_deepseek_model_env_override() {
+        let _env_lock = crate::test_support::lock_test_env();
+        let _codewhale_model = crate::test_support::EnvVarGuard::remove("CODEWHALE_MODEL");
+        let _deepseek_model = crate::test_support::EnvVarGuard::set("DEEPSEEK_MODEL", " auto ");
+        let config = Config {
+            default_text_model: Some("deepseek/deepseek-v4-pro".to_string()),
+            ..Default::default()
+        };
+
+        assert_eq!(resolve_exec_model(&config, None), "auto");
+    }
+
+    #[test]
     fn exec_accepts_split_prompt_words_for_windows_cmd_shims() {
         let cli = parse_cli(&["codewhale", "exec", "hello", "world"]);
         let Some(Commands::Exec(args)) = cli.command else {
             panic!("expected exec command");
         };
 
+        assert_eq!(args.prompt, vec!["hello", "world"]);
+    }
+
+    #[test]
+    fn exec_keeps_model_flag_before_split_prompt_words() {
+        let cli = parse_cli(&["codewhale", "exec", "--model", "auto", "hello", "world"]);
+        let Some(Commands::Exec(args)) = cli.command else {
+            panic!("expected exec command");
+        };
+
+        assert_eq!(args.model.as_deref(), Some("auto"));
         assert_eq!(args.prompt, vec!["hello", "world"]);
     }
 

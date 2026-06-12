@@ -46,6 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   providers now report whether the value came from `--provider`, environment,
   or config. Config-sourced unsupported providers fall back to DeepSeek without
   forwarding stale keyring secrets. Thanks @cyq1017 for the PR.
+- **Exec auto-model handoff (#3148).** `codewhale exec --model auto` now
+  survives the CLI/TUI boundary by honoring the CodeWhale model env alias and
+  legacy DeepSeek model handoff before falling back to provider defaults.
+  Thanks @hongchen1993 for the PR.
 - **TUI mouse-report leak (#3063/#3067).** Strip raw SGR mouse coordinate
   tails from the composer even when `use_mouse_capture` is false, covering
   orphaned terminal reporting state after crashes or focus races.
