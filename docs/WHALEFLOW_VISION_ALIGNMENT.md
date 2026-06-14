@@ -12,7 +12,7 @@
 >   Train 3 (`WorkerRuntimeProfile` at the spawn path); verify on merge.
 > - **Rec 3 (structured `NeedsInput` worker contract)** — targeted by Train 3 Bug 3.
 > - **Rec 5 (coordination substrate / un-orphan the whaleflow IR)** and **Rec 6 (swarm-UX roster)**
->   are the genuinely NET-NEW gaps — not covered by any current train; candidates to file.
+>   are the genuinely NET-NEW gaps — **now filed as #3229 (coordination substrate) and #3230 (synthesis/reduce pass)**.
 
 ---
 
